@@ -6,7 +6,7 @@ use CGI;
 use Template;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.0.2';
+our $VERSION = '1.1.0';
 
 =head1 NAME
 
@@ -42,6 +42,17 @@ to the cgi, and will allow for changing of the sort. Below the table of results 
 table, which shows the current page, along with I<n> other pages of the total result set, 
 and includes links to the first, previous, next and last pages in the result set.
 
+HTML::Reportwriter also supports column grouping, allowing for reports to display datasets like
+the following:
+
+ +------------+---------------+-------+
+ |            |               |   1   |
+ |            |    test       +-------+
+ |   foo      |               |   2   |
+ |            +---------------+-------+
+ |            |    test2      |   3   |
+ +------------+---------------+-------+
+
 =head1 METHODS
 
 =over
@@ -69,7 +80,8 @@ elements:
  sql - the sql statement that will select the data from the database
  display - What should be displayed in the column's table header
  sortable - whether or not a sorting link should be generated for the column
- order - the optional sql that will be used to order by the specified column. If not present, then the value of sql is used
+ order - (optional) sql that will be used to order by the specified column. If not present, then the value of sql is used
+ group - (optional) true or false. If true, the column will be grouped after the results are retrieved.
 
 These definitions can be arbitrarily complex. For example:
 
@@ -79,6 +91,7 @@ These definitions can be arbitrarily complex. For example:
          sql => 'jp.username',
          display => 'Username',
          sortable => 1,
+         group => 1,
      },
      {
          get => 'date',
@@ -114,10 +127,10 @@ are both valid definitions. Additionally, you can combine scalar and hashref-fil
  ]
 
 
-If you are going to use complex structures in a column definiton (for example, the
+If you are going to use complex sql structures in a column definiton (for example, the
 DATE_FORMAT and IF statements above), it is STRONGLY recommended that you use a column alias (for example, the
 'AS date' in the date column example) in order to ensure proper functionality. This module has not been tested
-with unaliased complex columns.
+with unaliased complex sql column definitions.
 
 NOTE: If you use formatting that would change a numeric-type column into a string-type column (for example the
 date columns above), you should use the order attribute to ensure proper ordering. For example using DATE_FORMAT
@@ -207,7 +220,10 @@ sub new
     # if the simplified definition is used, change it to the complex one.
     if(@{$args->{'COLUMNS'}})
     {
+        $args->{'FIELDS'} = [];
+        my $grouping_allowed = 1;
         my $size = @{$args->{'COLUMNS'}} - 1;
+
         foreach my $index (0..$size)
         {
             if(ref($args->{'COLUMNS'}->[$index]) eq 'SCALAR' || ref($args->{'COLUMNS'}->[$index]) eq '')
@@ -220,6 +236,31 @@ sub new
                     'sortable' => ($args->{'COLUMN_SORT_DEFAULT'} ? 1 : 0),
                 };
             }
+
+            # enforce the fact that grouping is only allowed at the beginning of a column list
+            if(!defined($args->{'COLUMNS'}->[$index]->{'group'}) || !$args->{'COLUMNS'}->[$index]->{'group'})
+            {
+                # interesting efficiency question: is it faster to reassign in a safe situation,
+                # or would it be more efficient if there were a check to prevent reassignment?
+                $grouping_allowed = 0;
+            }
+            elsif(defined($args->{'COLUMNS'}->[$index]->{'group'}) && $args->{'COLUMNS'}->[$index]->{'group'})
+            {
+                if(!$grouping_allowed)
+                {
+                    die 'Grouped columns must be defined at the beginning of the column list';
+                }
+            }
+
+            # construct a list of fields with group set if it is a grouped column
+            my $col = $args->{'COLUMNS'}->[$index]->{'sql'};
+            $col =~ s/^.+ AS (.+)$/$1/i;
+            $col =~ s/^[a-zA-Z0-9]+\.//;
+            push @{$args->{'FIELDS'}}, {
+                'field' => $col,
+                'group' => (defined($args->{'COLUMNS'}->[$index]->{'group'}) && $args->{'COLUMNS'}->[$index]->{'group'}),
+                'draw_func' => (defined($args->{'COLUMNS'}->[$index]->{'draw_func'}) ? $args->{'COLUMNS'}->[$index]->{'draw_func'} : undef),
+            };
         }
     }
     else
@@ -267,7 +308,7 @@ sub new
     }
     if(!defined $args->{'CSS'})
     {
-        $args->{'CSS'} = "<style type=\"text/css\">\n\n#footer {\n    clear: both;\n    padding: 5px;\n    margin-top: 5px;\n    border: 1px solid gray;\n    background-color: rgb(213, 219, 225);\n    width: 600px;\n}\n\n.paging-table {\n    border: 0px solid black;\n}\n.paging-td {\n    padding: 4px;\n    font-weight: none;\n    color: #555555;\n}\n.paging-a {\n    color: black;\n    font-weight: bold;\n    text-decoration: none;\n}\n\n#idtable {\n        border: 1px solid #666;\n}\n\n#idtable tbody tr td {\n        padding: 3px 8px;\n        font-size: 8pt;\n        border: 0px solid black;\n        border-left: 1px solid #c9c9c9;\n        text-align: center;\n}\n\n#idtable tbody tr.table_even td {\n        background-color: #eee;\n}\n\n#idtable tbody tr.table_odd td {\n        background-color: #fff;\n}\n\n#idtable tbody tr.sortable-header-tr td {\n        background-color: #bbb;\n}\n</style>\n";
+        $args->{'CSS'} = "<style type=\"text/css\">\n\n#footer {\n    clear: both;\n    padding: 5px;\n    margin-top: 5px;\n    border: 1px solid gray;\n    background-color: rgb(213, 219, 225);\n    width: 600px;\n}\n\n.paging-table {\n    border: 0px solid black;\n}\n.paging-td {\n    padding: 4px;\n    font-weight: none;\n    color: #555555;\n}\n.paging-a {\n    color: black;\n    font-weight: bold;\n    text-decoration: none;\n}\n\n#idtable {\n        border: 1px solid #666;\n}\n\n#idtable tbody tr td {\n        padding: 3px 8px;\n        font-size: 8pt;\n        border: 0px solid black;\n        border-left: 1px solid #c9c9c9;\n        text-align: center;\n}\n\n#idtable tbody tr td.table_even {\n        background-color: #eee;\n}\n\n#idtable tbody tr td.table_odd {\n        background-color: #fff;\n}\n\n#idtable tbody tr.sortable-header-tr td {\n        background-color: #bbb;\n}\n</style>\n";
     }
 
     my $self = bless $args, $pkg;
@@ -286,23 +327,208 @@ sub draw
 	my $self = shift;
     my $template = Template->new();
 
-    my @fields = map { $_->{'sql'} } @{$self->{'COLUMNS'}};
-
     my $vars = {
-        'VERSION' => $VERSION,
-        'CSS' => $self->{'CSS'},
-        'HTML_HEADER' => $self->{'HTML_HEADER'},
-        'HTML_FOOTER' => $self->{'HTML_FOOTER'},
-        'PAGE_TITLE' => $self->{'PAGE_TITLE'},
-        'results' => [],
+        'version'     => $VERSION,
+        'css'         => $self->{'CSS'},
+        'html_header' => $self->{'HTML_HEADER'},
+        'html_footer' => $self->{'HTML_FOOTER'},
+        'page_title'  => $self->{'PAGE_TITLE'},
+        'sorting'     => $self->{'PAGING_OBJECT'}->get_sortable_table_header(),
+        'fields'      => $self->{'FIELDS'},
+        'draw_row'    => \&draw_row,
+        'row_counter' => [], # this will be populated as draw_row runs
     };
 
-    my $loop_counter = 0;
+    # grouping could be a costly operation, so only do it if necessary
+    if(defined($self->{'FIELDS'}->[0]->{'group'}) && $self->{'FIELDS'}->[0]->{'group'})
+    {
+        $vars->{'results'} = $self->group_results($self->get_results());
+    }
+    else
+    {
+        $vars->{'results'} = $self->get_results();
+    }
 
-    ### CORE LOGIC
+    # paging can only be drawn after we have the result set pulled
+    $vars->{'paging'} = $self->{'PAGING_OBJECT'}->get_paging_table();
+
+    print $self->{'CGI_OBJECT'}->header;
+    $template->process(\*DATA, $vars) || warn "Template processing failed: " . $template->error();
+}
+
+=item B<draw_row()>
+
+This function is magical. One day, when I am feeling brave, I will comment it. What ever happened to the nice textbook
+recursive functions they taught in CS class?
+
+It is internal to HTML::ReportWriter, and shouldn't need to be overridden. If you want to customize the look and feel of the
+report, you can use the draw_func option to the columns to override the appearance of a given element, and you can customize
+the stylesheet at creation-time (see new()).
+
+=cut
+
+sub draw_row
+{
+    my($fields, $results, $row_counter, $print, $open, $depth) = @_;
+    my $rowspan = 0;
+    my $output = '';
+
+    if(ref($results) ne 'ARRAY')
+    {
+        $results = [ $results ];
+    }
+
+    foreach my $res (@$results)
+    {
+        ++$row_counter->[$depth];
+
+        # We're dealing with a simple result set right now
+        if(!defined($res->{'HTML::ReportWriter group column'}))
+        {
+            ++$rowspan;
+
+            if(!$open)
+            {
+                $output .= '<tr>';
+            }
+
+            foreach my $field (@$fields)
+            {
+                my $fname = $field->{'field'};
+                if(exists($res->{$fname}))
+                {
+                    $output .= '<td class="' . ($row_counter->[$depth] % 2 ? 'table_odd' : 'table_even') . "\">$res->{$fname}</td>";
+                }
+            }
+            $output .= "</tr>\n";
+
+            if($open)
+            {
+                $open = 0;
+            }
+
+        }
+
+        # now we're dealing with a grouped row
+        else
+        {
+            my ($crowspan, $coutput) = draw_row($fields, $res->{'rows'}, $row_counter, 0, 1, $depth + 1);
+            $rowspan += $crowspan;
+
+            if(!$open)
+            {
+                $output .= '<tr>';
+            }
+
+            $output .= '<td class="' . ($row_counter->[$depth] % 2 ? 'table_odd' : 'table_even') . '" rowspan="' . $crowspan . '">'
+                . $res->{'HTML::ReportWriter group column'} . '</td>' . $coutput;
+
+            if($open)
+            {
+                $open = 0;
+            }
+        }
+    }
+
+    if($print)
+    {
+        return $output;
+    }
+    else
+    {
+        return ($rowspan, $output);
+    }
+}
+
+=item B<group_results()>
+
+Internal method -- groups a result set if necessary.
+
+=cut
+
+sub group_results
+{
+    my ($self, $data) = @_;
+
+    my $results = [];
+
+    # code below relies on the fact that having two refs $p and $q, setting $p = $q makes them refer to the same memory location.
+    # thus, I am using $p as a pointer to my current depth in the results data structure.
+    foreach my $href (@$data)
+    {
+        my $p = $results;
+        my $current_element_number = -1;
+
+        # process each field separately, and move the pointer as we go along
+        # this will be a little slow; if anyone has an idea for improving its performance, please share.
+        foreach my $f (@{$self->{'FIELDS'}})
+        {
+            if(defined($f->{'group'}) && $f->{'group'})
+            {
+                my $val = $href->{$f->{'field'}};
+
+                my $found = -1;
+                my $size = scalar @{$p};
+
+                if($size)
+                {
+                    foreach my $index (0..($size-1))
+                    {
+                        if($p->[$index]->{'HTML::ReportWriter group column'} eq $val)
+                        {
+                            $found = $index;
+                            last;
+                        }
+                    }
+                }
+
+                if($found != -1)
+                {
+                    $p = $p->[$found]->{'rows'};
+                }
+                else
+                {
+                    $p->[$size] = {
+                        'HTML::ReportWriter group column' => $val,
+                        'rows' => [],
+                    };
+                    $p = $p->[$size]->{'rows'};
+                }
+            }
+            else
+            {
+                if($current_element_number == -1)
+                {
+                    my $size = @{$p};
+                    $p->[$size] = {};
+                    $current_element_number = $size;
+                }
+
+                $p->[$current_element_number]->{$f->{'field'}} = $href->{$f->{'field'}};
+            }
+        }
+    }
+
+    return $results;
+}
+
+=item B<get_results()>
+
+Internal method -- generates the result set used by draw().
+
+=cut
+
+sub get_results
+{
+    my $self = shift;
+    my $loop_counter = 0;
+    my $results = [];
+
     if($self->{'MYSQL_MAJOR_VERSION'} >= 4)
     {
-        my $sql = 'SELECT SQL_CALC_FOUND_ROWS ' . join(', ', @fields) . ' ' . $self->{'SQL_FRAGMENT'};
+        my $sql = 'SELECT SQL_CALC_FOUND_ROWS '
+            . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}})
+            . ' ' . $self->{'SQL_FRAGMENT'};
         my $sort = $self->{'PAGING_OBJECT'}->get_mysql_sort();
         my $limit = $self->{'PAGING_OBJECT'}->get_mysql_limit();
 
@@ -334,7 +560,7 @@ sub draw
 
         while(my $href = $sth->fetchrow_hashref)
         {
-            push @{$vars->{'results'}}, $href;
+            push @$results, $href;
         }
     }
     else
@@ -346,10 +572,11 @@ sub draw
         my ($count) = $sth->fetchrow_array;
         $sth->finish;
 
-        # We won't bother checking the status, cause we're just now generating the limit clause
+        # We won't bother checking the status, cause we're just now generating the limit clause, so it is not likely
+        # the result set could have changed.
         $self->{'PAGING_OBJECT'}->num_results($count);
 
-        my $sql = 'SELECT ' . join(', ', @fields) . ' ' . $self->{'SQL_FRAGMENT'};
+        my $sql = 'SELECT ' . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}}) . ' ' . $self->{'SQL_FRAGMENT'};
         my $sort = $self->{'PAGING_OBJECT'}->get_mysql_sort();
         my $limit = $self->{'PAGING_OBJECT'}->get_mysql_limit();
 
@@ -358,50 +585,128 @@ sub draw
 
         while(my $href = $sth->fetchrow_hashref)
         {
-            push @{$vars->{'results'}}, $href;
-        }
-    }
-    # END CORE LOGIC
-
-    foreach (0..$#fields)
-    {
-        if($fields[$_] =~ / AS /i)
-        {
-            $fields[$_] =~ s/^.+ AS (.+)$/$1/i;
-        }
-        elsif($fields[$_] =~ /^[a-zA-Z0-9]+\./)
-        {
-            $fields[$_] =~ s/^[a-zA-Z0-9]+\.//;
+            push @{$results}, $href;
         }
     }
 
-    $vars->{'PAGING'} = $self->{'PAGING_OBJECT'}->get_paging_table();
-    $vars->{'SORTING'} = $self->{'PAGING_OBJECT'}->get_sortable_table_header();
-    $vars->{'FIELDS'} = \@fields;
-
-    print $self->{'CGI_OBJECT'}->header;
-    $template->process(\*DATA, $vars) || warn "Template processing failed: " . $template->error();
+    return $results;
 }
 
 =back
+
+=head1 A NOTE ABOUT GROUPING
+
+Grouping is done in code after the database returns its dataset. Grouping breaks sortability
+(or vice-versa depending on your point of view) to a small degree, and for large datasets grouping
+can produce unexpected results across pages.
+
+In particular, if a group of 6 rows of data spans two pages (say 3 results on page 1 and 3 results
+on page 2), then only three results will show on page 1. For this reason, it is recommended on pages
+that have highly-constrained result sets (1 page of results), or where paging is disabled.
+
+Additionally, it is strongly recommended that authors using this module consider which columns really
+need to be sortable when using grouping. Based on limited testing and experience, if sorting is
+necessary, I recommend only allowing sorting on the grouped columns. I also recommend making the
+default sort == the first grouped column.
+
+When you sort by an ungrouped column, the grouped columns are still grouped, despite the fact that
+they may appear adjacent. Order of the rows is preserved. For example, assume the following dataset
+was sorted by the third column and grouped by the first:
+
+ test       foo      5
+ test2      quux     4
+ test       bar      3
+ test2      bat      2
+ test       baz      1
+
+Output would be:
+
+ +-------+------+---+
+ |       | foo  | 5 |
+ |       +------+---+
+ | test  | bar  | 3 |
+ |       +------+---+
+ |       | baz  | 1 |
+ +-------+------+---+
+ |       | quux | 4 |
+ | test2 +------+---+
+ |       | bat  | 2 |
+ +-------+------+---+
+
+One restriction on grouped columns is that they must appear at the beginning of the column list:
+
+ COLUMNS => [
+     {
+         get => 'username',
+         sql => 'jp.username',
+         display => 'Username',
+         sortable => 1,
+         group => 1,
+     },
+     {
+         get => 'date',
+         sql => 'DATE_FORMAT(l.created, \'%m/%e/%Y\') AS date',
+         display => 'Date',
+         sortable => 1,
+         order => 'l.created',
+     },
+ ]
+
+is correct, whereas:
+
+ COLUMNS => [
+     {
+         get => 'username',
+         sql => 'jp.username',
+         display => 'Username',
+         sortable => 1,
+     },
+     {
+         get => 'date',
+         sql => 'DATE_FORMAT(l.created, \'%m/%e/%Y\') AS date',
+         display => 'Date',
+         sortable => 1,
+         order => 'l.created',
+         group => 1,
+     },
+ ]
+
+will result in die() being called.
+
+=head1 USING HTML::ReportWriter WITH OTHER DATASOURCES
+
+While it is my hope that I will eventually be able to add any datasource that someone
+could want to this package, I know that in the meantime, some people are left hanging. As
+a result of the recent separation of data retrieval into the get_results() method, you can
+now add support for any data retrieval method you wish: either subclass HTML::ReportWriter
+and override get_results, or modify your created object like
+
+ $report->{'get_results'} = \&data_retrieval_func();
+
+If you override the function, your new function should take no parameters, rely on $self to
+provide necessary paging and sorting information, and return an arrayref consisting of
+hashrefs containing { column => value } pairs for each column that is passed in to new using
+COLUMNS. I haven't tested this, but see no reason why it should not work.
+
+Please do not rely on this as anything more than a temporary fix -- I expect that the internals
+of the module will change somewhat dramatically when I finally decide on a method of abstracting
+data retrieval. Suggestions welcome on how to abstract data retrieval.
 
 =head1 TODO
 
 =over
 
 =item *
-Proof-read the documentation. I don't know how soon I'll have time to proofread, so I'm
-releasing as-is. Docs should be good enough for the average developer.
-
-=item *
-Allow the user to pass arguments to Template, or allow the user to pass a previously created
-Template object (in the fashion of the CGI and DBH objects.
-
-=item *
 write tests for the module
 
 =item *
-support for other databases (help greatly appreciated)
+support for other databases (help greatly appreciated & some design work needed to support them cleanly)
+
+=item *
+implement support for the 'draw_func' attribute on columns
+
+=item *
+implement export feature supporting export to CSV/PDF for the results
 
 =back
 
@@ -612,32 +917,21 @@ __DATA__
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
 <html>
 <head>
-<title>[% PAGE_TITLE %]</title>
-[% CSS %]
+<title>[% page_title %]</title>
+[% css %]
 </head>
 <body>
-[% HTML_HEADER %]
-[% rowcounter = 1 %]
+[% html_header %]
 <center>
 <table border="0" width="800">
 <tr><td>
 <table id="idtable" border="0" cellspacing="0" cellpadding="4" width="100%">
-[% SORTING %]
+[% sorting %]
 [%- IF results.size < 1 %]
-<tr><td colspan="[% FIELDS.size %]" align="center">There are no results to display.</td></tr>
+<tr><td colspan="[% fields.size %]" align="center">There are no results to display.</td></tr>
 [%- ELSE %]
     [%- FOREACH x = results %]
-        [%- IF rowcounter mod 2 %]
-            [%- rowclass = "table_odd" %]
-        [%- ELSE %]
-            [%- rowclass = "table_even" %]
-        [%- END %]
-<tr class="[% rowclass %]">
-        [%- FOR field = FIELDS %]
-    <td>[% x.$field %]</td>
-        [%- END %]
-</tr>
-        [%- rowcounter = rowcounter + 1 %]
+        [% draw_row(fields, x, row_counter, 1, 0, 0) %]
     [%- END %]
 [%- END %]
 </table>
@@ -645,13 +939,13 @@ __DATA__
 <tr><td>
 <table border="0" width="100%">
 <tr>
-<td width="75%"></td><td width="25%">[% PAGING %]</td>
+<td width="75%"></td><td width="25%">[% paging %]</td>
 </tr>
 </table>
 </td></tr>
 </table>
 </center>
 <br /><br />
-[% HTML_FOOTER %]
+[% html_footer %]
 </body>
 </html>

@@ -6,6 +6,25 @@ Mon Jan 24 07:16:23 2005
 
 Revision history for Perl extension HTML::ReportWriter.
 
+1.1.0 Mon Mar 15 23:09:11 2005
+	- documentation edits for clarity
+	- Added grouping feature. Supporting changes:
+		- modifications to new()
+		- modification to CSS to support even/odd coloring scheme on the TD instead of TR
+		- moved row_counter handling out of the template, created depth-level tracking
+		  row_counter so that grouped results can be colored correctly
+		- added draw_row function, took logic out of template with regards to drawing rows
+		- added group_results function
+	- moved results retrieval logic from draw() and created a function for it called get_results.
+	  This should help when we implement additional data retrieval interfaces. Additionally, enabled
+	  the development of the grouping code.
+	- documentation addition discussing overriding get_results
+	- documentation updates for new feature(s)
+	- modifications to new() to support upcoming draw_func option (not yet implemented)
+	- renamed variables to lowercase versions of themselves in the template to avoid possible
+	  future collisions with reserved words.
+	- updated TODO
+
 1.0.2 Mon Jan 24 07:19:11 2005
 	- Fixed bug in column counting. Only caused problems if simplified columns were in use, AFAICT
 	- Fixed a ref() check that wasn't accounting for ''. This broke simplified columns completely
