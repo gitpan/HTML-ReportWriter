@@ -1,6 +1,19 @@
+Edits to the Changelog
+
+Mon Jan 24 07:16:23 2005
+	- Revision history for HTML::ReportWriter had a version jump from 1.0 to 1.1.
+	  This should have been from 1.0 to 1.0.1. This has been fixed.
+
 Revision history for Perl extension HTML::ReportWriter.
 
-1.1 Tue Jan 11 17:12:00 2005
+1.0.2 Mon Jan 24 07:19:11 2005
+	- Fixed bug in column counting. Only caused problems if simplified columns were in use, AFAICT
+	- Fixed a ref() check that wasn't accounting for ''. This broke simplified columns completely
+	- Fixed broken example code (EXAMPLES section of docs)
+	- Removed reference to CGI::Auth::Simple until such time as I can release it
+	- Added mysql statements to create demo data for testing the ReportWriter module(s)
+
+1.0.1 Tue Jan 11 17:12:00 2005
 	- incremented version number, doc updates. Only real code change was made to PagingAndSorting
 
 1.0 Wed Dec 29 22:30:15 2004

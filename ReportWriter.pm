@@ -6,7 +6,7 @@ use CGI;
 use Template;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.0.1';
+our $VERSION = '1.0.2';
 
 =head1 NAME
 
@@ -207,10 +207,10 @@ sub new
     # if the simplified definition is used, change it to the complex one.
     if(@{$args->{'COLUMNS'}})
     {
-        my $size = @{$args->{'COLUMNS'}};
+        my $size = @{$args->{'COLUMNS'}} - 1;
         foreach my $index (0..$size)
         {
-            if(ref($args->{'COLUMNS'}->[$index]) eq 'SCALAR')
+            if(ref($args->{'COLUMNS'}->[$index]) eq 'SCALAR' || ref($args->{'COLUMNS'}->[$index]) eq '')
             {
                 my $str = $args->{'COLUMNS'}->[$index];
                 $args->{'COLUMNS'}->[$index] = {
@@ -407,6 +407,76 @@ support for other databases (help greatly appreciated)
 
 =head1 EXAMPLES
 
+Data: the following statements can be reloaded into a mysql database and the resulting tables
+can be used in conjunction with the scripts below to demo the features of the reportwriter.
+The data should be imported into a DB named testing, and have a root user with a blank password,
+or else you need to edit the DBI->connect statements below. I'd recommend never having a blank root
+password, personally.
+
+ CREATE TABLE log (
+       userid int(10) default NULL,
+       activity char(24) default NULL,
+       created timestamp(14) NOT NULL
+     ) TYPE=MyISAM;
+
+ INSERT INTO log VALUES (1,'test',20050124064258);
+ INSERT INTO log VALUES (1,'test2',20050124064301);
+ INSERT INTO log VALUES (1,'test3',20050124064303);
+ INSERT INTO log VALUES (1,'test4',20050124064305);
+ INSERT INTO log VALUES (2,'test4',20050124064308);
+ INSERT INTO log VALUES (3,'test5',20050124064313);
+ INSERT INTO log VALUES (2,'test6',20050124064317);
+ INSERT INTO log VALUES (2,'test7',20050124064319);
+
+ CREATE TABLE people (
+           name char(25) default NULL,
+           age int(2) default NULL,
+           birthday timestamp(14) NOT NULL,
+           phone_number char(10) default NULL,
+           active int(1) default '1'
+     ) TYPE=MyISAM;
+
+ INSERT INTO people VALUES ('Barney Rubble',20,19700101000000,'9724443456',1);
+ INSERT INTO people VALUES ('Fred Flintstone',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('wilma',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('dino',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('bambam',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('george',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('elroy',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('judy',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('jane',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('disco',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('tango',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('foxtrot',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('waltz',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('swing',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('i',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('am',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('not',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('feeling',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('creative',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('right',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('now',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('so',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('the',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('sample',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('data',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('sucks.',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('sorry',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('about',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES ('that!',25,19700401000000,'9725551212',1);
+ INSERT INTO people VALUES (':)',25,19700401000000,'9725551212',1);
+
+ CREATE TABLE user (
+           id int(10) default NULL,
+           name char(15) default NULL,
+           groupid int(1) default NULL
+     ) TYPE=MyISAM;
+
+ INSERT INTO user VALUES (1,'zeus',3);
+ INSERT INTO user VALUES (2,'apollo',2);
+ INSERT INTO user VALUES (3,'mercury',3);
+
 Example 1, a simple non-interactive report, like one that might be used to show phonebook
 entries:
 
@@ -416,7 +486,7 @@ entries:
  use HTML::ReportWriter;
  use DBI;
 
- my $dbh = DBI->connect('DBI:mysql:host=localhost:database=testing', 'username', 'password');
+ my $dbh = DBI->connect('DBI:mysql:host=localhost:database=testing', 'root', '');
 
  my $sql_fragment = 'FROM people WHERE active = 1';
 
@@ -439,44 +509,37 @@ entries:
 
  $report->draw();
 
-Example 2, an interactive report, using a simple pre-emptive login module for authentication, and
-allowing the user to select data within a date range.
+Example 2, an interactive report allowing the user to select data within a date range.
 
  #!/usr/bin/perl -w
 
  use strict;
- # I am hoping to release the next module soon. Check CPAN if you're interested
- use CGI::Auth::Simple;
  use CGI;
  use HTML::ReportWriter;
  use DBI;
 
- my $dbh = DBI->connect('DBI:mysql:host=localhost:database=testing', 'test', 'pass');
+ my $dbh = DBI->connect('DBI:mysql:host=localhost:database=testing', 'root', '');
  my $co = CGI->new();
-
- my $auth = CGI::Auth::Simple->new({
-         DBH => $dbh,
-         CGI_OBJECT => $co,
- });
- $auth->login;
 
  # set defaults if there is not a setting for date1 or date2
  my $date1 = $co->param('date1') || '20050101000000';
  my $date2 = $co->param('date2') || '20050201000000';
 
- my $sql_fragment = 'FROM log AS l, user AS u WHERE l.user_id = u.id AND u.group_id = '
-                  . $dbh->quote($auth->{'profile'}->{'group_id'}) . ' AND l.date BETWEEN '
+ my $sql_fragment = 'FROM log AS l, user AS u WHERE l.userid = u.id AND u.groupid = '
+                  . $dbh->quote(3) . ' AND l.created BETWEEN '
                   . $dbh->quote($date1) . ' AND ' . $dbh->quote($date2);
 
  my $report = HTML::ReportWriter->new({
          DBH => $dbh,
          CGI_OBJECT => $co,
+         SQL_FRAGMENT => $sql_fragment,
          DEFAULT_SORT => 'date',
          HTML_HEADER => '<form method="get"><table><tr><td colspan="3">Show results from:</td></tr><tr>
                          <td><input type="text" name="date1" value="' . $date1 . '" /></td>
                          <td>&nbsp;&nbsp;to&nbsp;&nbsp;</td>
-                         <td><input type="text" name="date2" value="' . $date2 . '" /></td></tr></table></form>',
-         PAGE_TITLE => 'Log Activity for Group ' . $auth->{'profile'}->{'group_name'},
+                         <td><input type="text" name="date2" value="' . $date2 . '" /></td></tr>
+                         <tr><td colspan="3" align="center"><input type="submit" /></td></tr></table></form>',
+         PAGE_TITLE => 'Log Activity for Group ' . 'foo',
          COLUMNS => [
              'name',
              'activity',
@@ -491,24 +554,9 @@ allowing the user to select data within a date range.
 
  $report->draw();
 
-Caveats for Example 1:
-
-=over
-
-=item *
-It has not been tested; I wrote it at the same time as the rest of the docs. I have no reason to believe, however
-that it would not work given the proper database structure.
-
-=back
-
 Caveats for Example 2:
 
 =over
-
-=item *
-It has not been tested; I wrote it at the same time as the rest of the docs. I believe it would work as expected,
-however I wouldn't be suprised to learn of a bug/typo in the example. Please keep in mind that this the examples
-are primarily intended to illustrate usage. I think the examples both accomplish this goal, regardless of function. :)
 
 =item *
 By using the short form of the column definitions, you are asserting that there is only
@@ -547,8 +595,8 @@ PagingAndSorting was developed during my employ at HRsmart, Inc. L<http://www.hr
 public release was graciously approved.
 
 =item *
-Robert Egert helped with design of the ReportWriter module with regards to rendering the results, and
-indirectly suggested a simplified COLUMNS definition.
+Robert Egert was an early adopter, and made signifigant contributions in the form of suggestions and
+bug reports.
 
 =back
 
