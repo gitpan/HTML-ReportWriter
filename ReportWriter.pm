@@ -6,7 +6,7 @@ use CGI;
 use Template;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.0';
+our $VERSION = '1.0.1';
 
 =head1 NAME
 
@@ -68,7 +68,8 @@ elements:
  get - the string used in the get variable to determine the sorted column
  sql - the sql statement that will select the data from the database
  display - What should be displayed in the column's table header
- sortable - whether or not a sorting link should be generated for the column.
+ sortable - whether or not a sorting link should be generated for the column
+ order - the optional sql that will be used to order by the specified column. If not present, then the value of sql is used
 
 These definitions can be arbitrarily complex. For example:
 
@@ -84,6 +85,7 @@ These definitions can be arbitrarily complex. For example:
          sql => 'DATE_FORMAT(l.created, \'%m/%e/%Y\') AS date',
          display => 'Date',
          sortable => 1,
+         order => 'l.created',
      },
      {
          get => 'type',
@@ -107,6 +109,7 @@ are both valid definitions. Additionally, you can combine scalar and hashref-fil
          sql => 'DATE_FORMAT(birthday, \'%m/%e/%Y\') AS birthday',
          display => 'Birthday',
          sortable => 1,
+         order => 'birthday',
      },
  ]
 
@@ -115,6 +118,11 @@ If you are going to use complex structures in a column definiton (for example, t
 DATE_FORMAT and IF statements above), it is STRONGLY recommended that you use a column alias (for example, the
 'AS date' in the date column example) in order to ensure proper functionality. This module has not been tested
 with unaliased complex columns.
+
+NOTE: If you use formatting that would change a numeric-type column into a string-type column (for example the
+date columns above), you should use the order attribute to ensure proper ordering. For example using DATE_FORMAT
+as shown above results in the integer-style date column being treated as a string (20041010120000 becomes 
+'10-10-2004'), which would cause '10-10-2004' to sort before '10-02-2004'.
 
 =item COLUMN_SORT_DEFAULT
 If the simplified version of the COLUMNS definition is used (COLUMNS => [ 'foo', 'bar' ]), then this variable

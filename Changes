@@ -1,5 +1,8 @@
 Revision history for Perl extension HTML::ReportWriter.
 
+1.1 Tue Jan 11 17:12:00 2005
+	- incremented version number, doc updates. Only real code change was made to PagingAndSorting
+
 1.0 Wed Dec 29 22:30:15 2004
 	- Fixed handling of MySQL v4 results -- if you page past the end of the result set, it moves
 	  you to the last page of the result set
@@ -19,6 +22,10 @@ Revision history for Perl extension HTML::ReportWriter.
 	- original version
 
 Revision history for Perl extension HTML::ReportWriter::PagingAndSorting.
+
+1.1.2 Tue Jan 11 16:13:00 2005
+	- Added 'order' attribute to columns definition to deal with ordering problems on
+	  a formatted column
 
 1.1.1 Wed Dec 29 16:47:00 2004
 	- removed die() from get_paging_table is NUM_RESULTS is 0. Instead return blank string

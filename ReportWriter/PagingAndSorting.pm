@@ -5,7 +5,7 @@ use POSIX;
 use CGI;
 use List::MoreUtils qw(none firstidx);
 
-our $VERSION = '1.1.1';
+our $VERSION = '1.1.2';
 
 =head1 NAME
 
@@ -213,6 +213,11 @@ The name of the column in the display. Used by get_sortable_html_table_header
 =item sortable:
 
 True/False (1/0). Defines the behaviour of the column. Does it allow sorting?
+
+=item order:
+
+Optional property that defines the sql used in the order clause. If not set, the 'sql' property is used.
+See the ReportWriter documentation for more information on this property.
 
 =back
 
@@ -551,7 +556,7 @@ sub get_mysql_sort
         {
             die "This should not happen";
         }
-        $sort = $self->{'SORTABLE_COLUMNS'}->[$index]->{'sql'};
+        $sort = $self->{'SORTABLE_COLUMNS'}->[$index]->{'order'} || $self->{'SORTABLE_COLUMNS'}->[$index]->{'sql'};
         if($sort =~ / AS /i)
         {
             $sort =~ s/^.+ AS (.+)$/$1/i;
