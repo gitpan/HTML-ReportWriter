@@ -1,0 +1,30 @@
+Revision history for Perl extension HTML::ReportWriter.
+
+0.9  Thu Dec 23 00:12:00 2004
+	- original version
+
+Revision history for Perl extension HTML::ReportWriter::PagingAndSorting.
+
+1.1  Thu Dec 23 00:12:00 2004
+	*** This release is not backwards compatible with previous versions ***
+	- Packaged the paging module under the ReportWriter module, now that RW is ready for release.
+	- Fixed one bad reference to SORT_DEFAULT, should have been DEFAULT_SORT (in constructor).
+	- Removed duplicate line from constructor; setup for PAGES_IN_LIST occurred twice.
+	- I made sortable_columns uppercase to match the rest of the arguments.
+	- Removed get_paging_stylesheet, and imbedded the default stylesheet into the default template.
+	- Fixed reference to HILIGHT_COLOR, should have been HIGHLIGHT_COLOR in constructor & docs.
+	- I removed HIGHLIGHT_COLOR and FONT_COLOR since the stylesheet is now handled by RW, thus
+	  invalidating the previous change. It's left here for historical bug-tracking reasons.
+	- Replaced (DESC|ASC)_IMAGE with (DESC|ASC)_HTML (which could be an image). This enabled me to 
+	  set a reasonable default, the HTML entities &uarr; and &darr;
+	- Changed the behaviour of the num_results function. Now may return FALSE in certain circumstances.
+	  Check docs for details.
+
+1.0.1  Thu Dec 16 12:41:00 2004
+	- Fixed name of sub to match documentation
+	- Changed sub name to be consistent with other subroutines
+	- Updated SYNOPSIS to include a more full-fledged example
+
+1.0  Tue Dec 14 17:28:34 2004
+	- original version
+
