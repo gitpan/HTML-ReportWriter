@@ -5,7 +5,7 @@ use POSIX;
 use CGI;
 use List::MoreUtils qw(none firstidx);
 
-our $VERSION = '1.1';
+our $VERSION = '1.1.1';
 
 =head1 NAME
 
@@ -447,7 +447,7 @@ the paging block based on the display settings that were configured during insta
 sub get_paging_table
 {
     my ($self) = @_;
-    die "You cannot draw paging for a page with no results!" if $self->{'NUM_RESULTS'} == 0;
+    return '' if $self->{'NUM_RESULTS'} == 0;
 
     my @paging_array = $self->generate_paging_array();
 
@@ -590,7 +590,7 @@ sub get_sort_link
     }
 
     # Either you're switching to a new sort col (default ASC) or you're changing the direction of the current sort
-    my $dir = ($sort ne $self->{'CURRENT_SORT_COL'} ? 'ASC' :
+    my $dir = (!defined($self->{'CURRENT_SORT_COL'}) || $sort ne $self->{'CURRENT_SORT_COL'} ? 'ASC' :
             ($self->{'CURRENT_SORT_DIR'} eq 'ASC' ? 'DESC' : 'ASC'));
 
     # save the old page number and sort (this is necessary since we have a shared CGI object)
@@ -655,7 +655,7 @@ sub get_sortable_table_header
             . ($url ? qq(<a class="sortable-header-a" href="$url">) : '')
             . $col->{'display'}
             . ($url ? '</a> <b>' : '')
-            . ( $col->{'get'} ne $self->{'CURRENT_SORT_COL'} ? '' : ($self->{'CURRENT_SORT_DIR'} eq 'ASC' ? $self->{'ASC_HTML'} : $self->{'DESC_HTML'}) )
+            . ( !defined($self->{'CURRENT_SORT_COL'}) || $col->{'get'} ne $self->{'CURRENT_SORT_COL'} ? '' : ($self->{'CURRENT_SORT_DIR'} eq 'ASC' ? $self->{'ASC_HTML'} : $self->{'DESC_HTML'}) )
             . '</b></td>';
     }
 

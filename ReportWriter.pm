@@ -7,7 +7,7 @@ use Template;
 use lib qw(..);
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '0.9';
+our $VERSION = '0.9.1';
 
 =head1 NAME
 
@@ -46,7 +46,7 @@ and includes links to the first, previous, next and last pages in the result set
 The results are drawn directly from the data in the database, however their appearance may 
 be overridden in one of two ways:
 
-1. Change the template (aka point the ReportWriter at a different template)
+1. Change the template (aka point the ReportWriter at a different template) (NOT YET IMPLEMENTED)
 2. use SQL to modify the results before they are displayed.
 
 Almost everything in this module is configurable; see the documentation for B<new()>, below.
@@ -188,6 +188,7 @@ sub draw
         'HTML_HEADER' => $self->{'HTML_HEADER'},
         'HTML_FOOTER' => $self->{'HTML_FOOTER'},
         'PAGE_TITLE' => $self->{'PAGE_TITLE'},
+        'results' => [],
     };
 
     ### CORE LOGIC
@@ -233,7 +234,7 @@ sub draw
     $vars->{'FIELDS'} = \@fields;
 
     print $self->{'CGI_OBJECT'}->header;
-    $template->process(\*DATA, $vars);
+    $template->process(\*DATA, $vars) || warn "Template processing failed: " . $template->error();
 }
 
 =back
@@ -254,6 +255,12 @@ write tests for the module
 
 =item *
 implement logic for MySQL versions prior to 4
+
+=item *
+fix handling for MySQL 4 in case of paging past end of results
+
+=item *
+break the CSS style into an override-able argument
 
 =item *
 support for other databases (help greatly appreciated)
@@ -359,19 +366,23 @@ __DATA__
 <tr><td>
 <table id="idtable" border="0" cellspacing="0" cellpadding="4" width="100%">
 [% SORTING %]
-[%- FOREACH x = results %]
-    [%- IF rowcounter mod 2 %]
-        [%- rowclass = "table_odd" %]
-    [%- ELSE %]
-        [%- rowclass = "table_even" %]
-    [%- END %]
+[%- IF results.size < 1 %]
+<tr><td colspan="[% FIELDS.size %]" align="center">There are no results to display.</td></tr>
+[%- ELSE %]
+    [%- FOREACH x = results %]
+        [%- IF rowcounter mod 2 %]
+            [%- rowclass = "table_odd" %]
+        [%- ELSE %]
+            [%- rowclass = "table_even" %]
+        [%- END %]
 <tr class="[% rowclass %]">
-    [%- FOR field = FIELDS %]
+        [%- FOR field = FIELDS %]
     <td>[% x.$field %]</td>
-    [%- END %]
+        [%- END %]
 </tr>
-    [%- rowcounter = rowcounter + 1 %]
-[% END %]
+        [%- rowcounter = rowcounter + 1 %]
+    [%- END %]
+[%- END %]
 </table>
 </td></tr>
 <tr><td>
