@@ -5,7 +5,7 @@ use POSIX;
 use CGI;
 use List::MoreUtils qw(none firstidx);
 
-our $VERSION = '1.1.2';
+our $VERSION = '1.1.3';
 
 =head1 NAME
 
@@ -461,7 +461,7 @@ sub get_paging_table
 
     # paging header
     $string = '<table class="paging-table"><tr>';
-    $string = '<td nowrap class="paging-td" style="font-size: 7pt;">Displaying Results '
+    $string .= '<td nowrap class="paging-td" style="font-size: 7pt;">Displaying Results '
         . ($self->{'CURRENT_PAGE'} == 1 ? 1 : (($self->{'CURRENT_PAGE'} - 1) * $self->{'RESULTS_PER_PAGE'}))
         . ' to '
         . ($self->{'CURRENT_PAGE'} == $total_pages ? $self->{'NUM_RESULTS'} : ($self->{'CURRENT_PAGE'} * $self->{'RESULTS_PER_PAGE'}))
