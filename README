@@ -4,10 +4,15 @@ HTML/ReportWriter
 This module provides a simple OO interface to generating pageable,
 sortable tabular HTML reports from a database.
 
-Currently, the module only fully supports (or will work with) MySQL.
-It comes with a default template that allows for quick HTML generation
-without any script or file-level dependencies other than the Perl modules
-on which the module is based.
+Currently, the module only fully supports (or is represented to work with)
+MySQL. This does not necessarily mean that it will not work with other 
+DBMSs, however in order for it to do so, you'd likely need to set
+MYSQL_MAJOR_VERSION to 3, and the DBMS would need to have LIMIT and ORDER
+BY semantics identical to that of MySQL.
+
+It comes with a default template that allows for quick HTML
+generation without any script or file-level dependencies other than the
+Perl modules on which the module is based.
 
 INSTALLATION
 

@@ -1,5 +1,14 @@
 Revision history for Perl extension HTML::ReportWriter.
 
+1.0 Wed Dec 29 22:30:15 2004
+	- Fixed handling of MySQL v4 results -- if you page past the end of the result set, it moves
+	  you to the last page of the result set
+	- Added support for MySQL 3 using count(*)
+	- Broke the CSS into a CSS argument so that it can be overridden
+	- Documented the ReportWriter module. Documentation may contain errors.
+	  since I don't know how soon I'll be able to proof-read the docs, I'm
+      going to upload as-is.
+
 0.9.1 Wed Dec 29 16:47:00 2004
 	- Added handling for blank result sets to the default template
 	- default blank arrayref for results in draw() to avoid warnings
