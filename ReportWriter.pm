@@ -5,8 +5,9 @@ use DBI;
 use CGI;
 use Template;
 use HTML::ReportWriter::PagingAndSorting;
+use Data::Dumper;
 
-our $VERSION = '1.1.0';
+our $VERSION = '1.3.0';
 
 =head1 NAME
 
@@ -82,6 +83,10 @@ elements:
  sortable - whether or not a sorting link should be generated for the column
  order - (optional) sql that will be used to order by the specified column. If not present, then the value of sql is used
  group - (optional) true or false. If true, the column will be grouped after the results are retrieved.
+ draw_func - (optional) code ref, may not be used if group is true. code ref to a function which takes two parameters.
+             param 1: the data from the column being rendered
+             param 2: the hashref containing the data from the rest of the row
+             returns: the string that should be displayed as the cell contents when that column is drawn
 
 These definitions can be arbitrarily complex. For example:
 
@@ -105,6 +110,13 @@ These definitions can be arbitrarily complex. For example:
          sql => "IF(l.deleted = 'yes', 'delete', 'add') AS type",
          display => 'Type',
          sortable => 1,
+     },
+     {
+         get => 'successful',
+         sql => "l.successful",
+         display => 'Successful',
+         sortable => 1,
+         draw_func => sub { my ($data, $cols) = @_; my $lid = $cols->{'id'}; my $color = ($data eq 'no' ? 'red' : ($data eq 'yes' ? 'green' : 'black')); return "<a style=\"color: $color;\" href=\"#\" onClick=\"popup('/cgi-bin/reports/message.cgi?id=$lid'); return false;\">$data</a>"; },
      },
  ]
 
@@ -135,7 +147,8 @@ with unaliased complex sql column definitions.
 NOTE: If you use formatting that would change a numeric-type column into a string-type column (for example the
 date columns above), you should use the order attribute to ensure proper ordering. For example using DATE_FORMAT
 as shown above results in the integer-style date column being treated as a string (20041010120000 becomes 
-'10-10-2004'), which would cause '10-10-2004' to sort before '10-02-2004'.
+'10-10-2004'), which would cause '10-10-2004' to sort before '10-02-2004'. draw_func is intended to provide you
+with a simple alternative to things like DATE_FORMAT -- you can now do the formatting outside the SQL.
 
 =item COLUMN_SORT_DEFAULT
 If the simplified version of the COLUMNS definition is used (COLUMNS => [ 'foo', 'bar' ]), then this variable
@@ -169,6 +182,15 @@ See B<EXAMPLES> below for ideas.
 Last thing that appears in the body of the page. Defaults to: '<center><div id="footer"><p align="center">This report
 was generated using <a href="http://search.cpan.org/~opiate/">HTML::ReportWriter</a> version ' . $VERSION . '.</p></div>
 </center>';
+
+=item EXCEL_EXPORT_VARIABLE
+Defaults to 'exporttoexcel'. This variable, if passed in via a GET or POST parameter, and set eq 'true', will cause the
+report to be exported, without paging, to MS Excel format. Sorting is maintained. Grouping of results is also disabled,
+since grouping would make the results practically unusable in terms of generating reports or statistics in Excel. If you
+wish to disable Excel exporting, you can set this variable to ''.
+
+=item REPORT_TABLE_WIDTH
+Default: 800. The width of the table containing the report output.
 
 =back
 
@@ -216,6 +238,9 @@ sub new
     $args->{'COLUMN_SORT_DEFAULT'} = 1 if !defined $args->{'COLUMN_SORT_DEFAULT'};
     $args->{'MYSQL_MAJOR_VERSION'} = 4 if !defined $args->{'MYSQL_MAJOR_VERSION'};
 
+    $args->{'EXCEL_EXPORT_VARIABLE'} = 'exporttoexcel' if !defined $args->{'EXCEL_EXPORT_VARIABLE'};
+    $args->{'REPORT_TABLE_WIDTH'} = '800' if !defined $args->{'REPORT_TABLE_WIDTH'};
+
     # check for simplified column definition, and make sure the COLUMNS array isn't empty
     # if the simplified definition is used, change it to the complex one.
     if(@{$args->{'COLUMNS'}})
@@ -235,6 +260,11 @@ sub new
                     'display' => ucfirst($str),
                     'sortable' => ($args->{'COLUMN_SORT_DEFAULT'} ? 1 : 0),
                 };
+            }
+
+            if(defined($args->{'COLUMNS'}->[$index]->{'group'}) && $args->{'COLUMNS'}->[$index]->{'group'} && defined($args->{'COLUMNS'}->[$index]->{'draw_func'}) && $args->{'COLUMNS'}->[$index]->{'draw_func'})
+            {
+                die 'You cannot define a draw_func for a grouped column';
             }
 
             # enforce the fact that grouping is only allowed at the beginning of a column list
@@ -325,35 +355,60 @@ Draws the page. This function writes the HTTP header and the page text to STDOUT
 sub draw
 {
 	my $self = shift;
-    my $template = Template->new();
 
-    my $vars = {
-        'version'     => $VERSION,
-        'css'         => $self->{'CSS'},
-        'html_header' => $self->{'HTML_HEADER'},
-        'html_footer' => $self->{'HTML_FOOTER'},
-        'page_title'  => $self->{'PAGE_TITLE'},
-        'sorting'     => $self->{'PAGING_OBJECT'}->get_sortable_table_header(),
-        'fields'      => $self->{'FIELDS'},
-        'draw_row'    => \&draw_row,
-        'row_counter' => [], # this will be populated as draw_row runs
-    };
+    my $results = $self->get_results();
+    print STDERR Dumper($results);
 
-    # grouping could be a costly operation, so only do it if necessary
-    if(defined($self->{'FIELDS'}->[0]->{'group'}) && $self->{'FIELDS'}->[0]->{'group'})
+    if($self->{'CGI_OBJECT'}->param($self->{'EXCEL_EXPORT_VARIABLE'}) eq 'true')
     {
-        $vars->{'results'} = $self->group_results($self->get_results());
+        use Spreadsheet::SimpleExcel;
+        my @header = map { $_->{'display'} } @{$self->{'COLUMNS'}};
+
+        binmode(\*STDOUT);
+
+        # create a new instance
+        my $excel = Spreadsheet::SimpleExcel->new();
+
+        # add worksheets
+        $excel->add_worksheet('Exported Report Data',{-headers => \@header, -data => $results});
+
+        # create the spreadsheet
+        $excel->output();
     }
     else
     {
-        $vars->{'results'} = $self->get_results();
+        my $template = Template->new();
+
+        my $vars = {
+            'version'     => $VERSION,
+            'css'         => $self->{'CSS'},
+            'html_header' => $self->{'HTML_HEADER'},
+            'html_footer' => $self->{'HTML_FOOTER'},
+            'page_title'  => $self->{'PAGE_TITLE'},
+            'sorting'     => $self->{'PAGING_OBJECT'}->get_sortable_table_header(),
+            'fields'      => $self->{'FIELDS'},
+            'draw_row'    => \&draw_row,
+            'row_counter' => [], # this will be populated as draw_row runs
+            'excel_link' => ($self->{'EXCEL_EXPORT_VARIABLE'} ? $ENV{'REQUEST_URI'} . ($ENV{'REQUEST_URI'} =~ /\?/ ? "&" : "?") . "$self->{'EXCEL_EXPORT_VARIABLE'}=true" : ''),
+            'report_table_width' => $self->{'REPORT_TABLE_WIDTH'},
+        };
+
+        # grouping could be a costly operation, so only do it if necessary
+        if(defined($self->{'FIELDS'}->[0]->{'group'}) && $self->{'FIELDS'}->[0]->{'group'})
+        {
+            $vars->{'results'} = $self->group_results($results);
+        }
+        else
+        {
+            $vars->{'results'} = $results;
+        }
+
+        # paging can only be drawn after we have the result set pulled
+        $vars->{'paging'} = $self->{'PAGING_OBJECT'}->get_paging_table();
+
+        print $self->{'CGI_OBJECT'}->header;
+        $template->process(\*DATA, $vars) || warn "Template processing failed: " . $template->error();
     }
-
-    # paging can only be drawn after we have the result set pulled
-    $vars->{'paging'} = $self->{'PAGING_OBJECT'}->get_paging_table();
-
-    print $self->{'CGI_OBJECT'}->header;
-    $template->process(\*DATA, $vars) || warn "Template processing failed: " . $template->error();
 }
 
 =item B<draw_row()>
@@ -397,7 +452,16 @@ sub draw_row
                 my $fname = $field->{'field'};
                 if(exists($res->{$fname}))
                 {
-                    $output .= '<td class="' . ($row_counter->[$depth] % 2 ? 'table_odd' : 'table_even') . "\">$res->{$fname}</td>";
+                    $output .= '<td class="' . ($row_counter->[$depth] % 2 ? 'table_odd' : 'table_even') . "\">";
+                    if(ref($field->{'draw_func'}) eq 'CODE')
+                    {
+                        $output .= $field->{'draw_func'}->($res->{$fname}, $res);
+                    }
+                    else
+                    {
+                        $output .= $res->{$fname};
+                    }
+                    $output .= "</td>";
                 }
             }
             $output .= "</tr>\n";
@@ -524,7 +588,19 @@ sub get_results
     my $loop_counter = 0;
     my $results = [];
 
-    if($self->{'MYSQL_MAJOR_VERSION'} >= 4)
+    if($self->{'CGI_OBJECT'}->param($self->{'EXCEL_EXPORT_VARIABLE'}) eq 'true')
+    {
+        my $sql = 'SELECT '
+            . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}})
+            . ' ' . $self->{'SQL_FRAGMENT'};
+        my $sort = $self->{'PAGING_OBJECT'}->get_mysql_sort();
+
+        my $sth = $self->{'DBH'}->prepare("$sql $sort");
+        $sth->execute();
+        $results = $sth->fetchall_arrayref;
+        $sth->finish;
+    }
+    elsif($self->{'MYSQL_MAJOR_VERSION'} >= 4)
     {
         my $sql = 'SELECT SQL_CALC_FOUND_ROWS '
             . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}})
@@ -563,7 +639,7 @@ sub get_results
             push @$results, $href;
         }
     }
-    else
+    elsif($self->{'MYSQL_MAJOR_VERSION'} < 4)
     {
         # MySQL 3.23 requires the use of a count query -- SQL_CALC_FOUND_ROWS had not yet been implemented
         my $countsql = 'SELECT count(*) ' . $self->{'SQL_FRAGMENT'};
@@ -587,6 +663,10 @@ sub get_results
         {
             push @{$results}, $href;
         }
+    }
+    else
+    {
+        die "this should never happen";
     }
 
     return $results;
@@ -692,6 +772,10 @@ Please do not rely on this as anything more than a temporary fix -- I expect tha
 of the module will change somewhat dramatically when I finally decide on a method of abstracting
 data retrieval. Suggestions welcome on how to abstract data retrieval.
 
+Update: overriding this function will cause breakage unless either (1) Your function is modified to
+take ExportToExcel behaviour into account, or (2) You disable ExportToExcel functionality in your
+report.
+
 =head1 TODO
 
 =over
@@ -703,10 +787,13 @@ write tests for the module
 support for other databases (help greatly appreciated & some design work needed to support them cleanly)
 
 =item *
-implement support for the 'draw_func' attribute on columns
+implement export feature supporting export to PDF for the results
 
 =item *
-implement export feature supporting export to CSV/PDF for the results
+RESULTS_PER_PAGE => 0 should disable paging
+
+=item *
+overrides for shading behaviour and line drawing between cells.
 
 =back
 
@@ -886,6 +973,7 @@ Please report any additional bugs discovered to the author.
 
 This module relies on L<DBI>, L<Template> and L<CGI>.
 The paging/sorting module also relies on L<POSIX> and L<List::MoreUtils>.
+Export to Excel functionality uses L<Spreadsheet::SimpleExcel>.
 
 =head1 AUTHOR
 
@@ -923,7 +1011,7 @@ __DATA__
 <body>
 [% html_header %]
 <center>
-<table border="0" width="800">
+<table border="0" width="[% report_table_width %]">
 <tr><td>
 <table id="idtable" border="0" cellspacing="0" cellpadding="4" width="100%">
 [% sorting %]
@@ -945,6 +1033,15 @@ __DATA__
 </td></tr>
 </table>
 </center>
+[%- IF(excel_link) %]
+<script language="JavaScript">
+function export_popup(url)
+{
+            window.open (url,'filedl','toolbar=yes,location=no,directories=no,status=no,menubar=yes,scrollbars=yes,resizable=yes,copyhistory=no,width=300,height=400,screenX=0,screenY=0,top=0,left=0');
+}
+</script>
+<p align="center">Export this data to: [ <a href="#" onClick="javascript:export_popup('[% excel_link %]'); return false;">Excel</a> ]</p>
+[%- END %]
 <br /><br />
 [% html_footer %]
 </body>

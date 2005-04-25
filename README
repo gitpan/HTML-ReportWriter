@@ -27,7 +27,7 @@ DEPENDENCIES
 
 This module requires these other modules and libraries:
 
-   DBI, CGI, List::MoreUtils, POSIX, Template
+   DBI, CGI, List::MoreUtils, POSIX, Template, Spreadsheet::SimpleExcel
 
 COPYRIGHT AND LICENSE
 

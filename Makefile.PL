@@ -10,6 +10,7 @@ WriteMakefile(
             'POSIX' => 0,
             'DBI' => 0,
             'Template' => 0,
+            'Spreadsheet::SimpleExcel' => 0,
     },
     'ABSTRACT_FROM'     => 'ReportWriter.pm',
     'AUTHOR'            => 'Shane Allen <opiate@gmail.com>',
