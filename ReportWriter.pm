@@ -5,9 +5,8 @@ use DBI;
 use CGI;
 use Template;
 use HTML::ReportWriter::PagingAndSorting;
-use Data::Dumper;
 
-our $VERSION = '1.3.0';
+our $VERSION = '1.3.1';
 
 =head1 NAME
 
@@ -357,7 +356,6 @@ sub draw
 	my $self = shift;
 
     my $results = $self->get_results();
-    print STDERR Dumper($results);
 
     if($self->{'CGI_OBJECT'}->param($self->{'EXCEL_EXPORT_VARIABLE'}) eq 'true')
     {
