@@ -6,7 +6,7 @@ use CGI;
 use Template;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.3.1';
+our $VERSION = '1.3.2';
 
 =head1 NAME
 
@@ -182,14 +182,23 @@ Last thing that appears in the body of the page. Defaults to: '<center><div id="
 was generated using <a href="http://search.cpan.org/~opiate/">HTML::ReportWriter</a> version ' . $VERSION . '.</p></div>
 </center>';
 
-=item EXCEL_EXPORT_VARIABLE
-Defaults to 'exporttoexcel'. This variable, if passed in via a GET or POST parameter, and set eq 'true', will cause the
-report to be exported, without paging, to MS Excel format. Sorting is maintained. Grouping of results is also disabled,
-since grouping would make the results practically unusable in terms of generating reports or statistics in Excel. If you
-wish to disable Excel exporting, you can set this variable to ''.
+=item EXPORT_VARIABLE
+Defaults to 'exportto'. This variable, if passed in via a GET or POST parameter, and set equal to a supported export method,
+will cause the report to be exported. Set EXPORT_VARIABLE to '' to disable exporting. Currently supported formats:
+
+=over
+
+=item *
+excel: Reports are exported without paging. Sorting is maintained. Grouping of results is disabled.
+
+=back
 
 =item REPORT_TABLE_WIDTH
 Default: 800. The width of the table containing the report output.
+
+=item DOCTYPE
+Default: <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+Set to '' if you do not want to have a doctype declared.
 
 =back
 
@@ -237,8 +246,11 @@ sub new
     $args->{'COLUMN_SORT_DEFAULT'} = 1 if !defined $args->{'COLUMN_SORT_DEFAULT'};
     $args->{'MYSQL_MAJOR_VERSION'} = 4 if !defined $args->{'MYSQL_MAJOR_VERSION'};
 
-    $args->{'EXCEL_EXPORT_VARIABLE'} = 'exporttoexcel' if !defined $args->{'EXCEL_EXPORT_VARIABLE'};
+    # html format specifiers
+    $args->{'DOCTYPE'} = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">' if !defined $args->{'DOCTYPE'};
     $args->{'REPORT_TABLE_WIDTH'} = '800' if !defined $args->{'REPORT_TABLE_WIDTH'};
+
+    $args->{'EXPORT_VARIABLE'} = 'exportto' if !defined $args->{'EXPORT_VARIABLE'};
 
     # check for simplified column definition, and make sure the COLUMNS array isn't empty
     # if the simplified definition is used, change it to the complex one.
@@ -304,6 +316,13 @@ sub new
         warn "Creating new CGI object";
     }
 
+    # I want to modularize this somehow... when that happens, this will need to be fixed.
+    $args->{'EXPORT'} = $args->{'CGI_OBJECT'}->param($args->{'EXPORT_VARIABLE'});
+    if(!defined($args->{'EXPORT'}) || $args->{'EXPORT'} ne 'excel')
+    {
+        $args->{'EXPORT'} = '';
+    }
+
     # set up the arguments for the paging module, and delete them from the main arg list,
     # since we don't really care about them
     foreach my $key (@paging_args)
@@ -357,7 +376,7 @@ sub draw
 
     my $results = $self->get_results();
 
-    if($self->{'CGI_OBJECT'}->param($self->{'EXCEL_EXPORT_VARIABLE'}) eq 'true')
+    if($self->{'EXPORT'} eq 'excel')
     {
         use Spreadsheet::SimpleExcel;
         my @header = map { $_->{'display'} } @{$self->{'COLUMNS'}};
@@ -376,6 +395,7 @@ sub draw
     else
     {
         my $template = Template->new();
+        my $url = $self->{'CGI_OBJECT'}->url( -absolute => 1, -query => 1 );
 
         my $vars = {
             'version'     => $VERSION,
@@ -387,8 +407,9 @@ sub draw
             'fields'      => $self->{'FIELDS'},
             'draw_row'    => \&draw_row,
             'row_counter' => [], # this will be populated as draw_row runs
-            'excel_link' => ($self->{'EXCEL_EXPORT_VARIABLE'} ? $ENV{'REQUEST_URI'} . ($ENV{'REQUEST_URI'} =~ /\?/ ? "&" : "?") . "$self->{'EXCEL_EXPORT_VARIABLE'}=true" : ''),
+            'export_link' => ($self->{'EXPORT_VARIABLE'} ? $url . ($url =~ /\?/ ? "&" : "?") . "$self->{'EXPORT_VARIABLE'}=excel" : ''),
             'report_table_width' => $self->{'REPORT_TABLE_WIDTH'},
+            'doctype' => $self->{'DOCTYPE'},
         };
 
         # grouping could be a costly operation, so only do it if necessary
@@ -586,7 +607,7 @@ sub get_results
     my $loop_counter = 0;
     my $results = [];
 
-    if($self->{'CGI_OBJECT'}->param($self->{'EXCEL_EXPORT_VARIABLE'}) eq 'true')
+    if($self->{'EXPORT'} eq 'excel')
     {
         my $sql = 'SELECT '
             . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}})
@@ -771,8 +792,7 @@ of the module will change somewhat dramatically when I finally decide on a metho
 data retrieval. Suggestions welcome on how to abstract data retrieval.
 
 Update: overriding this function will cause breakage unless either (1) Your function is modified to
-take ExportToExcel behaviour into account, or (2) You disable ExportToExcel functionality in your
-report.
+take exports into account, or (2) You disable export functionality in your report.
 
 =head1 TODO
 
@@ -792,6 +812,11 @@ RESULTS_PER_PAGE => 0 should disable paging
 
 =item *
 overrides for shading behaviour and line drawing between cells.
+
+=item *
+I am debating the addition of support for query prefixes, like DISTINCT (which should appear before
+the list of data to be selected). This could also be used for extensions like MySQL's SQL_NO_CACHE
+directives. Feedback welcome.
 
 =back
 
@@ -971,7 +996,7 @@ Please report any additional bugs discovered to the author.
 
 This module relies on L<DBI>, L<Template> and L<CGI>.
 The paging/sorting module also relies on L<POSIX> and L<List::MoreUtils>.
-Export to Excel functionality uses L<Spreadsheet::SimpleExcel>.
+Exporting to Excel uses L<Spreadsheet::SimpleExcel>.
 
 =head1 AUTHOR
 
@@ -1000,7 +1025,9 @@ This library is free software; you can redistribute it and/or modify it under th
 =cut
 
 __DATA__
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+[% IF doctype -%]
+[% doctype %]
+[% END -%]
 <html>
 <head>
 <title>[% page_title %]</title>
@@ -1031,14 +1058,14 @@ __DATA__
 </td></tr>
 </table>
 </center>
-[%- IF(excel_link) %]
+[%- IF(export_link) %]
 <script language="JavaScript">
 function export_popup(url)
 {
             window.open (url,'filedl','toolbar=yes,location=no,directories=no,status=no,menubar=yes,scrollbars=yes,resizable=yes,copyhistory=no,width=300,height=400,screenX=0,screenY=0,top=0,left=0');
 }
 </script>
-<p align="center">Export this data to: [ <a href="#" onClick="javascript:export_popup('[% excel_link %]'); return false;">Excel</a> ]</p>
+<p align="center">Export this data to: [ <a href="#" onClick="javascript:export_popup('[% export_link %]'); return false;">Excel</a> ]</p>
 [%- END %]
 <br /><br />
 [% html_footer %]
