@@ -3,10 +3,9 @@ package HTML::ReportWriter;
 use strict;
 use DBI;
 use CGI;
-use Template;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.3.2';
+our $VERSION = '1.4.0';
 
 =head1 NAME
 
@@ -149,6 +148,9 @@ as shown above results in the integer-style date column being treated as a strin
 '10-10-2004'), which would cause '10-10-2004' to sort before '10-02-2004'. draw_func is intended to provide you
 with a simple alternative to things like DATE_FORMAT -- you can now do the formatting outside the SQL.
 
+=item DEBUG
+Will cause useful debugging messages to be printed using the warn facility. default: 0
+
 =item COLUMN_SORT_DEFAULT
 If the simplified version of the COLUMNS definition is used (COLUMNS => [ 'foo', 'bar' ]), then this variable
 determines whether the table header will allow sorting of any columns. It is global in scope; that is, either
@@ -242,9 +244,19 @@ sub new
         die 'Argument \'COLUMNS\' is required, and must be an array reference';
     }
 
-    # argument setup
+    # define reasonable defaults for arguments if a value is not provided
     $args->{'COLUMN_SORT_DEFAULT'} = 1 if !defined $args->{'COLUMN_SORT_DEFAULT'};
+
+    # this switch controls whether count(*) is used, or for MySQL the more efficient SQL_CALC_FOUND_ROWS
+    # when getting the total number of results for pagination.
     $args->{'MYSQL_MAJOR_VERSION'} = 4 if !defined $args->{'MYSQL_MAJOR_VERSION'};
+    if($args->{'DBH'}->{'Driver'}->{'Name'} ne 'mysql')
+    {
+        # we almost certainly cannot use SQL_CALC_FOUND_ROWS if the DBMS is not MySQL
+        $args->{'MYSQL_MAJOR_VERSION'} = 3;
+    }
+
+    $args->{'DEBUG'} = 0 if !defined $args->{'DEBUG'};
 
     # html format specifiers
     $args->{'DOCTYPE'} = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">' if !defined $args->{'DOCTYPE'};
@@ -372,25 +384,32 @@ Draws the page. This function writes the HTTP header and the page text to STDOUT
 
 sub draw
 {
-	my $self = shift;
+    eval
+    {
+        use Template;
+    };
+
+    if($@)
+    {
+        die "The draw function can not be utilized unless the module Template (template-toolkit.org) is installed";
+    }
+
+    my $self = shift;
 
     my $results = $self->get_results();
 
-    if($self->{'EXPORT'} eq 'excel')
+    if($self->{'EXPORT'})
     {
-        use Spreadsheet::SimpleExcel;
-        my @header = map { $_->{'display'} } @{$self->{'COLUMNS'}};
+        my $method = 'export_to_' . $self->{'EXPORT'};
 
-        binmode(\*STDOUT);
-
-        # create a new instance
-        my $excel = Spreadsheet::SimpleExcel->new();
-
-        # add worksheets
-        $excel->add_worksheet('Exported Report Data',{-headers => \@header, -data => $results});
-
-        # create the spreadsheet
-        $excel->output();
+        if(exists &$method)
+        {
+            $self->$method($results);
+        }
+        else
+        {
+            die "export method $method does not exist";
+        }
     }
     else
     {
@@ -428,6 +447,38 @@ sub draw
         print $self->{'CGI_OBJECT'}->header;
         $template->process(\*DATA, $vars) || warn "Template processing failed: " . $template->error();
     }
+}
+
+=item B<export_to_excel()>
+=cut
+
+sub export_to_excel
+{
+    eval
+    {
+        use Spreadsheet::SimpleExcel;
+    };
+
+    if($@)
+    {
+        die "You cannot use this feature unless SpreadSheet::SimpleExcel is installed";
+    }
+
+    my $self = shift;
+    my ($results) = @_;
+
+    my @header = map { $_->{'display'} } @{$self->{'COLUMNS'}};
+
+    binmode(\*STDOUT);
+
+    # create a new instance
+    my $excel = Spreadsheet::SimpleExcel->new();
+
+    # add worksheets
+    $excel->add_worksheet('Exported Report Data',{-headers => \@header, -data => $results});
+
+    # create the spreadsheet
+    $excel->output();
 }
 
 =item B<draw_row()>
@@ -478,7 +529,7 @@ sub draw_row
                     }
                     else
                     {
-                        $output .= $res->{$fname};
+                        $output .= (defined($res->{$fname}) ? $res->{$fname} : '');
                     }
                     $output .= "</td>";
                 }
@@ -607,12 +658,18 @@ sub get_results
     my $loop_counter = 0;
     my $results = [];
 
-    if($self->{'EXPORT'} eq 'excel')
+    # assume no paging if we are exporting the results
+    if($self->{'EXPORT'})
     {
         my $sql = 'SELECT '
             . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}})
             . ' ' . $self->{'SQL_FRAGMENT'};
-        my $sort = $self->{'PAGING_OBJECT'}->get_mysql_sort();
+        my $sort = $self->{'PAGING_OBJECT'}->get_sort($self->{'DBH'}->{'Driver'}->{'Name'});
+
+        if($self->{'DEBUG'})
+        {
+            warn "Executing SQL: $sql $sort";
+        }
 
         my $sth = $self->{'DBH'}->prepare("$sql $sort");
         $sth->execute();
@@ -624,8 +681,13 @@ sub get_results
         my $sql = 'SELECT SQL_CALC_FOUND_ROWS '
             . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}})
             . ' ' . $self->{'SQL_FRAGMENT'};
-        my $sort = $self->{'PAGING_OBJECT'}->get_mysql_sort();
-        my $limit = $self->{'PAGING_OBJECT'}->get_mysql_limit();
+        my $sort = $self->{'PAGING_OBJECT'}->get_sort($self->{'DBH'}->{'Driver'}->{'Name'});
+        my $limit = $self->{'PAGING_OBJECT'}->get_limit($self->{'DBH'}->{'Driver'}->{'Name'});
+
+        if($self->{'DEBUG'})
+        {
+            warn "Executing SQL: $sql $sort $limit";
+        }
 
         my $sth = $self->{'DBH'}->prepare("$sql $sort $limit");
         $sth->execute();
@@ -637,9 +699,15 @@ sub get_results
         # returns false, then we've somehow paged past the end of the result set. Get back on track here.
         while(!$status && $count)
         {
-            $limit = $self->{'PAGING_OBJECT'}->get_mysql_limit();
+            $limit = $self->{'PAGING_OBJECT'}->get_limit($self->{'DBH'}->{'Driver'}->{'Name'});
 
             $sth->finish;
+
+            if($self->{'DEBUG'})
+            {
+                warn "Executing SQL: $sql $sort $limit";
+            }
+
             $sth = $self->{'DBH'}->prepare("$sql $sort $limit");
             $sth->execute();
             ($count) = $self->{'DBH'}->selectrow_array('SELECT FOUND_ROWS() AS num');
@@ -662,6 +730,12 @@ sub get_results
     {
         # MySQL 3.23 requires the use of a count query -- SQL_CALC_FOUND_ROWS had not yet been implemented
         my $countsql = 'SELECT count(*) ' . $self->{'SQL_FRAGMENT'};
+
+        if($self->{'DEBUG'})
+        {
+            warn "Executing SQL: $countsql";
+        }
+
         my $sth = $self->{'DBH'}->prepare("$countsql");
         $sth->execute();
         my ($count) = $sth->fetchrow_array;
@@ -672,8 +746,13 @@ sub get_results
         $self->{'PAGING_OBJECT'}->num_results($count);
 
         my $sql = 'SELECT ' . join(', ', map { $_->{'sql'} } @{$self->{'COLUMNS'}}) . ' ' . $self->{'SQL_FRAGMENT'};
-        my $sort = $self->{'PAGING_OBJECT'}->get_mysql_sort();
-        my $limit = $self->{'PAGING_OBJECT'}->get_mysql_limit();
+        my $sort = $self->{'PAGING_OBJECT'}->get_sort($self->{'DBH'}->{'Driver'}->{'Name'});
+        my $limit = $self->{'PAGING_OBJECT'}->get_limit($self->{'DBH'}->{'Driver'}->{'Name'});
+
+        if($self->{'DEBUG'})
+        {
+            warn "Executing SQL: $sql $sort $limit";
+        }
 
         $sth = $self->{'DBH'}->prepare("$sql $sort $limit");
         $sth->execute();
@@ -802,13 +881,10 @@ take exports into account, or (2) You disable export functionality in your repor
 write tests for the module
 
 =item *
-support for other databases (help greatly appreciated & some design work needed to support them cleanly)
+support for other databases (help greatly appreciated)
 
 =item *
 implement export feature supporting export to PDF for the results
-
-=item *
-RESULTS_PER_PAGE => 0 should disable paging
 
 =item *
 overrides for shading behaviour and line drawing between cells.
