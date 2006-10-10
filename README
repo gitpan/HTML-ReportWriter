@@ -4,7 +4,7 @@ HTML/ReportWriter
 This module provides a simple OO interface to generating pageable,
 sortable tabular HTML reports from a database.
 
-Currently, the module only supports MySQL and PostgreSQL.
+Currently, the module supports MySQL, PostgreSQL and SQLite.
 If you'd like to see it work with another DBMS, please submit
 a patch containing the necessary get_limit and get_sort functions.
 

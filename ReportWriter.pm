@@ -5,7 +5,7 @@ use DBI;
 use CGI;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.4.0';
+our $VERSION = '1.4.1';
 
 =head1 NAME
 
@@ -1089,6 +1089,12 @@ public release was graciously approved.
 =item *
 Robert Egert was an early adopter, and made signifigant contributions in the form of suggestions and
 bug reports.
+
+=item *
+Mark Stosberg made several contributions including documentation corrections and PostgreSQL support.
+
+=item *
+Steven Mackenzie contributed a patch to add support for SQLite.
 
 =back
 

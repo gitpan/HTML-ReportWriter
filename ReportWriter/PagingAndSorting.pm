@@ -5,7 +5,7 @@ use POSIX;
 use CGI;
 use List::MoreUtils qw(none firstidx);
 
-our $VERSION = '1.2.0';
+our $VERSION = '1.3.0';
 
 =head1 NAME
 
@@ -704,6 +704,31 @@ in the SYNOPSIS.
 
 # The MySQL syntax is compatible with PostgreSQL
 *get_Pg_sort = \&get_mysql_sort;
+
+=item B<get_SQLite_limit()>
+
+ $sql_limit_snippet = $self->get_SQLite_limit();
+
+Generates a SQLite-compliant LIMIT clause to be appended to SQL queries in order to get the
+appropriate rows for a paged report. Example above, in the SYNOPSIS.
+
+=cut
+
+# The PostgreSQL syntax is compatible with SQLite
+*get_SQLite_limit = \&get_Pg_limit;
+
+=item B<get_SQLite_sort()>
+
+ $sql_order_by_snippet = $pager->get_SQLite_sort();
+
+Returns a SQLite-compliant ORDER BY clause based on the current sorting settings, to be appended
+to the SQL query used to generate the report that this module is being used for. Example above
+in the SYNOPSIS.
+
+=cut
+
+# The MySQL syntax is compatible with SQLite
+*get_SQLite_sort = \&get_mysql_sort;
 
 =item B<get_sort_link($column)>
 
