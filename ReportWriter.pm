@@ -5,7 +5,7 @@ use DBI;
 use CGI;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.4.1';
+our $VERSION = '1.5.0';
 
 =head1 NAME
 
@@ -81,6 +81,8 @@ elements:
  sortable - whether or not a sorting link should be generated for the column
  order - (optional) sql that will be used to order by the specified column. If not present, then the value of sql is used
  group - (optional) true or false. If true, the column will be grouped after the results are retrieved.
+ hide_column - (optional) true or false. If true, the column will not be drawn to the screen.  This is useful if you
+                want to pull data for some other column's draw_func.
  draw_func - (optional) code ref, may not be used if group is true. code ref to a function which takes two parameters.
              param 1: the data from the column being rendered
              param 2: the hashref containing the data from the rest of the row
@@ -108,6 +110,10 @@ These definitions can be arbitrarily complex. For example:
          sql => "IF(l.deleted = 'yes', 'delete', 'add') AS type",
          display => 'Type',
          sortable => 1,
+     },
+     {
+         sql => "l.id",
+         hide_column => 1,
      },
      {
          get => 'successful',
@@ -183,6 +189,9 @@ See B<EXAMPLES> below for ideas.
 Last thing that appears in the body of the page. Defaults to: '<center><div id="footer"><p align="center">This report
 was generated using <a href="http://search.cpan.org/~opiate/">HTML::ReportWriter</a> version ' . $VERSION . '.</p></div>
 </center>';
+
+=item LANGUAGE_TOKENS
+A list of language tokens that can be used to replace the default English text.
 
 =item EXPORT_VARIABLE
 Defaults to 'exportto'. This variable, if passed in via a GET or POST parameter, and set equal to a supported export method,
@@ -264,6 +273,14 @@ sub new
 
     $args->{'EXPORT_VARIABLE'} = 'exportto' if !defined $args->{'EXPORT_VARIABLE'};
 
+    $args->{'LANGUAGE_TOKENS'} = {
+                                    display_token => 'Displaying Results $1 to $2 of $3',
+                                    export_data_to => 'Export this data to',
+                                    export_report_data => 'Exported Report Data',
+                                    export_value => 'Excel',
+                                    no_results => 'There are no results to display.',
+                                 } if !defined $args->{'LANGUAGE_TOKENS'};
+
     # check for simplified column definition, and make sure the COLUMNS array isn't empty
     # if the simplified definition is used, change it to the complex one.
     if(@{$args->{'COLUMNS'}})
@@ -313,6 +330,7 @@ sub new
                 'field' => $col,
                 'group' => (defined($args->{'COLUMNS'}->[$index]->{'group'}) && $args->{'COLUMNS'}->[$index]->{'group'}),
                 'draw_func' => (defined($args->{'COLUMNS'}->[$index]->{'draw_func'}) ? $args->{'COLUMNS'}->[$index]->{'draw_func'} : undef),
+                'hide_column' => (defined($args->{'COLUMNS'}->[$index]->{'hide_column'}) && $args->{'COLUMNS'}->[$index]->{'hide_column'}),
             };
         }
     }
@@ -349,6 +367,7 @@ sub new
     # the paging module also gets a CGI_OBJECT, and a copy of the COLUMNS setup
     $paging_args->{'CGI_OBJECT'} = $args->{'CGI_OBJECT'};
     $paging_args->{'SORTABLE_COLUMNS'} = $args->{'COLUMNS'};
+    $paging_args->{'LANGUAGE_TOKENS'} = $args->{'LANGUAGE_TOKENS'};
 
     # instantiate our paging object
     $args->{'PAGING_OBJECT'} = HTML::ReportWriter::PagingAndSorting->new($paging_args);
@@ -378,7 +397,14 @@ sub new
 
 =item B<draw()>
 
-Draws the page. This function writes the HTTP header and the page text to STDOUT; it has no return value.
+Renders the page.
+This function takes one optional parameter, i<disable_output>. If the results are not being exported to a non-HTML format, and if
+i<disable_output> evaluates to false then this function writes the HTTP header and the page text to STDOUT (the only behaviour prior
+to version 1.5.0). If the parameter evaluates to true, the function does not print anything to STDOUT. In either of those cases, the
+text of the HTML page is returned by B<draw()>.
+
+If the results are being exported (to e.g. Excel), then the output will always be sent to STDOUT regardless of the value of
+disable_output, and the function will return success or failure of the export.
 
 =cut
 
@@ -395,6 +421,8 @@ sub draw
     }
 
     my $self = shift;
+    my( $disable_output ) = @_;
+    my $to_return = '';
 
     my $results = $self->get_results();
 
@@ -404,7 +432,7 @@ sub draw
 
         if(exists &$method)
         {
-            $self->$method($results);
+            return $self->$method($results);
         }
         else
         {
@@ -444,9 +472,18 @@ sub draw
         # paging can only be drawn after we have the result set pulled
         $vars->{'paging'} = $self->{'PAGING_OBJECT'}->get_paging_table();
 
-        print $self->{'CGI_OBJECT'}->header;
-        $template->process(\*DATA, $vars) || warn "Template processing failed: " . $template->error();
+        $vars = { %{ $self->{'LANGUAGE_TOKENS'}}, %$vars };
+
+        $template->process(\*DATA, $vars, \$to_return) || warn "Template processing failed: " . $template->error();
+
+        if( !defined $disable_output || !$disable_output )
+        {
+            print $self->{'CGI_OBJECT'}->header;
+            print "$to_return";
+        }
     }
+
+    return $to_return;
 }
 
 =item B<export_to_excel()>
@@ -478,7 +515,7 @@ sub export_to_excel
     $excel->add_worksheet('Exported Report Data',{-headers => \@header, -data => $results});
 
     # create the spreadsheet
-    $excel->output();
+    return $excel->output();
 }
 
 =item B<draw_row()>
@@ -520,7 +557,8 @@ sub draw_row
             foreach my $field (@$fields)
             {
                 my $fname = $field->{'field'};
-                if(exists($res->{$fname}))
+
+                if(exists($res->{$fname}) && !$field->{'hide_column'})
                 {
                     $output .= '<td class="' . ($row_counter->[$depth] % 2 ? 'table_odd' : 'table_even') . "\">";
                     if(ref($field->{'draw_func'}) eq 'CODE')
@@ -1123,7 +1161,7 @@ __DATA__
 <table id="idtable" border="0" cellspacing="0" cellpadding="4" width="100%">
 [% sorting %]
 [%- IF results.size < 1 %]
-<tr><td colspan="[% fields.size %]" align="center">There are no results to display.</td></tr>
+<tr><td colspan="[% fields.size %]" align="center">[% no_results %]</td></tr>
 [%- ELSE %]
     [%- FOREACH x = results %]
         [% draw_row(fields, x, row_counter, 1, 0, 0) %]
@@ -1147,7 +1185,7 @@ function export_popup(url)
             window.open (url,'filedl','toolbar=yes,location=no,directories=no,status=no,menubar=yes,scrollbars=yes,resizable=yes,copyhistory=no,width=300,height=400,screenX=0,screenY=0,top=0,left=0');
 }
 </script>
-<p align="center">Export this data to: [ <a href="#" onClick="javascript:export_popup('[% export_link %]'); return false;">Excel</a> ]</p>
+<p align="center">[% export_data_to %]: [ <a href="#" onClick="javascript:export_popup('[% export_link %]'); return false;">[% export_value %]</a> ]</p>
 [%- END %]
 <br /><br />
 [% html_footer %]

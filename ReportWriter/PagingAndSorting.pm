@@ -5,7 +5,7 @@ use POSIX;
 use CGI;
 use List::MoreUtils qw(none firstidx);
 
-our $VERSION = '1.3.0';
+our $VERSION = '1.5.0';
 
 =head1 NAME
 
@@ -178,6 +178,12 @@ Which column are we currently sorting by? Should never need to be overridden.
 
 Which direction are we currently sorting? Should never need to be overridden.
 
+=item LANGUAGE_TOKENS:
+
+This is a hashref used to make this module multilingual.  Currently, there is only one language token:
+display_token.  It is, by default, 'Displaying Results $1 to $2 of $3' where $1, $2, and $3 are replaced
+with the appropriate values.
+
 =back
 
 The following options control formatting, and should be self-explanatory. Their defaults
@@ -304,6 +310,9 @@ sub new
         $args->{'PAGES_IN_LIST'} -= 1;
         warn "PAGES_IN_LIST must be odd. See the documentation (if it exists) for the reason why.";
     }
+
+    #Provide a way to replace the english text
+    defined $args->{'LANGUAGE_TOKENS'} or $args->{'LANGUAGE_TOKENS'} = { display_token => 'Displaying Results $1 to $2 of $3' };
 
     # don't die here because they may not want to use the sorting, but may have a GET/POST var whose name is the
     # same as $args->{'SORT_VARIABLE'}. We'll die if they call a sort function.
@@ -498,14 +507,18 @@ sub get_paging_table
     my $total_pages = ceil($self->{'NUM_RESULTS'} / $self->{'RESULTS_PER_PAGE'});
     my $string = '';
 
+    my $first = ($self->{'CURRENT_PAGE'} == 1 ? 1 : (($self->{'CURRENT_PAGE'} - 1) * $self->{'RESULTS_PER_PAGE'}));
+    my $last = ($self->{'CURRENT_PAGE'} == $total_pages ? $self->{'NUM_RESULTS'} : ($self->{'CURRENT_PAGE'} * $self->{'RESULTS_PER_PAGE'}));
+    my $total = $self->{'NUM_RESULTS'};
+
+    my $language = $self->{'LANGUAGE_TOKENS'}->{'display_token'};
+    $language =~ s/\$1/$first/g;
+    $language =~ s/\$2/$last/g;
+    $language =~ s/\$3/$total/g;
+    
     # paging header
     $string = '<table class="paging-table"><tr>';
-    $string .= '<td nowrap class="paging-td" style="font-size: 7pt;">Displaying Results '
-        . ($self->{'CURRENT_PAGE'} == 1 ? 1 : (($self->{'CURRENT_PAGE'} - 1) * $self->{'RESULTS_PER_PAGE'}))
-        . ' to '
-        . ($self->{'CURRENT_PAGE'} == $total_pages ? $self->{'NUM_RESULTS'} : ($self->{'CURRENT_PAGE'} * $self->{'RESULTS_PER_PAGE'}))
-        . ' of '
-        . $self->{'NUM_RESULTS'} . '</td>';
+    $string .= '<td nowrap class="paging-td" style="font-size: 7pt;">'. $language . '</td>';
 
     # process the elements in order
     foreach ('FIRST','PREV',@paging_array,'NEXT','LAST')
