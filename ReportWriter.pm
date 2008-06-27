@@ -5,7 +5,7 @@ use DBI;
 use CGI;
 use HTML::ReportWriter::PagingAndSorting;
 
-our $VERSION = '1.5.0';
+our $VERSION = '1.5.1';
 
 =head1 NAME
 
@@ -506,6 +506,15 @@ sub export_to_excel
 
     my @header = map { $_->{'display'} } @{$self->{'COLUMNS'}};
 
+    my $i = 0;
+    foreach my $field ( @{$self->{'COLUMNS'}} )
+    {
+        if( "$field->{'hide_column'}" eq "1" )
+        {
+            map { splice( @$_, $i, 1) }  @$results;
+        }
+        $i++;
+    }
     binmode(\*STDOUT);
 
     # create a new instance

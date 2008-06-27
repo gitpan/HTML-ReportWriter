@@ -6,6 +6,10 @@ Mon Jan 24 07:16:23 2005
 
 Revision history for Perl extension HTML::ReportWriter.
 
+1.5.1 Fri Jun 27 10:21:29 2008
+    - Bugfix to export_to_excel function. Now, if a column is hidden, it is spliced out of the
+      result set instead of being left there and throwing the column headings off.
+
 1.5.0 Mon Oct 1 17:08:00 2007
     - Added LANGUAGE_TOKENS parameter which allows the module text to be easily customized and 
       translated. (Thanks to Peter Siewert)
